@@ -17,11 +17,13 @@ interface TaskCardProps {
     editingDueAt: string;
     onEditingDueAtChange: (value: string) => void;
     onEnterComplete: () => void;
+    now: number | null;
 }
 
 export default function TaskCard(
     { 
-    task, 
+    task,
+    now,
     onToggle, 
     onDelete, 
     onEdit, 
@@ -38,6 +40,11 @@ export default function TaskCard(
     onEnterComplete,
     }: TaskCardProps
 ) {
+    const isOverdue =
+        now !== null &&
+        !task.completed &&
+        !!task.dueAt &&
+        new Date(task.dueAt).getTime() < now;
     return (
     <div
         role="listitem"
@@ -96,8 +103,12 @@ export default function TaskCard(
             </span>
 
             {task.dueAt && (
-                <time className="task-due" dateTime={task.dueAt}>
-                截止：{new Date(task.dueAt).toLocaleString("zh-HK", {
+                <time
+                className={`task-due ${isOverdue ? "is-overdue" : ""}`}
+                dateTime={task.dueAt}
+                >
+                {isOverdue ? "已逾期：" : "截止："}
+                {new Date(task.dueAt).toLocaleString("zh-HK", {
                     year: "numeric",
                     month: "short",
                     day: "numeric",

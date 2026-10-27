@@ -119,6 +119,10 @@
   font-size: 13px;
 }
 
+.task-due.is-overdue {
+  color: #dc2626;
+}
+
 .task-actions {
   display: flex;
   gap: 10px;

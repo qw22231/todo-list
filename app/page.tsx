@@ -250,7 +250,21 @@ async function saveTask(id: number) {
     }
   });
 
-  
+  const [now, setNow] = useState<number | null>(null);
+
+  useEffect(() => {
+    const updateNow = () => setNow(Date.now());
+
+    const timer = window.setInterval(updateNow, 1000);
+    window.addEventListener("focus", updateNow);
+
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener("focus", updateNow);
+    };
+  }, []);
+
+
 useEffect(() => {
 
   let cancelled = false;
@@ -382,6 +396,7 @@ if (storageError) {
               isUpdating={busy} isDeleting={deletingTaskId === task.id}
               isEntering={enteringTaskId === task.id}
               onEnterComplete={() => setEnteringTaskId((current) => current === task.id ? null : current)}
+              now={now}
             />
           ))}
         </div>
