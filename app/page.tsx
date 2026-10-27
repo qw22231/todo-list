@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { Task } from "../type/task";
+import EdgeDock from "@/components/EdgeDock";
 import TaskCard from "@/components/TaskCard";
 import { 
   getTasks, 
@@ -331,6 +332,13 @@ if (storageError) {
   return (
     <main className="todo-page">
       <div className="todo-container">
+        <EdgeDock
+          paused={
+            showComposer ||
+            editingTaskId !== null ||
+            busy
+          }
+        />          
         <header className="page-header">
           <h1>我的任務</h1>
           <p>把每一天，留給重要的事。</p>

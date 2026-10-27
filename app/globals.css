@@ -1,5 +1,50 @@
 ﻿@import "tailwindcss";
 
+.edge-dock-control {
+  position: fixed;
+  top: 10px;
+  right: 12px;
+  z-index: 20;
+}
+
+.edge-dock-button {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid #e5e5e5;
+  border-radius: 7px;
+  background: #fff;
+  color: #737373;
+  cursor: pointer;
+}
+
+.edge-dock-button:hover {
+  background: #f5f5f5;
+  color: #262626;
+}
+
+.edge-dock-button[aria-pressed="true"] {
+  border-color: #b9d4bd;
+  background: #edf5ee;
+  color: #477f4e;
+}
+
+.edge-dock-error {
+  position: absolute;
+  top: 36px;
+  right: 0;
+  width: min(280px, calc(100vw - 24px));
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 7px;
+  background: #fff;
+  color: #b91c1c;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
