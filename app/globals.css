@@ -135,6 +135,29 @@
   color: #dc6b65;
 }
 
+.task-group {
+  margin-top: 22px;
+}
+
+.task-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #666;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.task-group-heading span {
+  color: #999;
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.task-group-heading.is-overdue {
+  color: #dc2626;
+}
+
 .todo-page button {
   cursor: pointer;
 }
@@ -188,6 +211,30 @@
 .task-exit {
   animation: task-out 200ms ease-in forwards;
   pointer-events: none;
+}
+
+.undo-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fafafa;
+  font-size: 13px;
+}
+
+.undo-bar span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.undo-bar button {
+  flex-shrink: 0;
+  color: #477f4e;
+  font-weight: 600;
 }
 
 @keyframes task-in {

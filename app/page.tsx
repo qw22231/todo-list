@@ -9,6 +9,7 @@ import {
   createTask, 
   updateTask, 
   deleteTask as deleteStoredTask,
+  restoreTask,
 } from "@/lib/task-storage";
 
 function toLocalInputValue(value?: string | null): string {
@@ -23,6 +24,39 @@ function toLocalInputValue(value?: string | null): string {
   );  
 }
 
+const TASK_GROUPS = [
+  { key: "overdue", label: "已逾期" },
+  { key: "today", label: "今天" },
+  { key: "soon", label: "即將到期" },
+  { key: "later", label: "稍後" },
+  { key: "undated", label: "未設定日期" },
+  { key: "completed", label: "已完成" },
+] as const;
+
+type TaskGroupKey = (typeof TASK_GROUPS)[number]["key"];
+
+function getTaskGroup(task: Task, now: number): TaskGroupKey {
+  if (task.completed) return "completed";
+  if (!task.dueAt) return "undated";
+
+  const due = Date.parse(task.dueAt);
+
+  if (!Number.isFinite(due)) return "undated";
+  if (due < now) return "overdue";
+
+  const tomorrow = new Date(now);
+  tomorrow.setHours(0, 0, 0, 0);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  if (due < tomorrow.getTime()) return "today";
+
+  // 明天至未來第 7 天，包含第 7 天整天。
+  const upcomingEnd = new Date(tomorrow);
+  upcomingEnd.setDate(upcomingEnd.getDate() + 7);
+
+  return due < upcomingEnd.getTime() ? "soon" : "later";
+}
+
 export default function Home() {
 
   const [newTaskTitle, setNewTaskTitle] = useState<string>("");
@@ -30,7 +64,7 @@ export default function Home() {
   const [editingTitle, setEditingTitle] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending">("all");
-  const [sortOrder, setSortOrder] = useState<"newest" | "oldest">("newest");
+  const [sortOrder, setSortOrder] = useState<"due" | "newest" | "oldest">("due");
   const [storageLoading, setStorageLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -42,6 +76,8 @@ export default function Home() {
   const [editingDueAt, setEditingDueAt] = useState("");
   const [enteringTaskId, setEnteringTaskId] = useState<number | null>(null);
   const [showComposer, setShowComposer] = useState(false);
+  const [now, setNow] = useState<number | null>(null);
+  const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
 
   const [tasks, setTasks] = useState<Task[]>([]);
 
@@ -167,6 +203,8 @@ async function deleteTask(id: number) {
       prevTasks.filter((item) => item.id !== id)
     );
 
+    setDeletedTasks((previous) => [...previous, task]);
+
     if (editingTaskId === id) {
       setEditingTaskId(null);
       setEditingTitle("");
@@ -227,6 +265,40 @@ async function saveTask(id: number) {
   }
 }
 
+async function undoDelete() {
+  if (
+    isSubmitting ||
+    updatingTaskId !== null ||
+    deletingTaskId !== null
+  ) {
+    return;
+  }
+
+  const task = deletedTasks[deletedTasks.length - 1];
+  if (!task) return;
+
+  // 沿用目前的 busy 機制，復原期間停用其他操作。
+  setUpdatingTaskId(task.id);
+  setActionError(null);
+
+  try {
+    const restored = await restoreTask(task);
+
+    setTasks((previous) => [...previous, restored]);
+    setDeletedTasks((previous) => previous.slice(0, -1));
+
+    // 避免復原成功後，被目前的篩選條件隱藏。
+    setSearchTerm("");
+    setStatusFilter("all");
+  } catch (error: unknown) {
+    setActionError(
+      error instanceof Error ? error.message : "復原失敗"
+    );
+  } finally {
+    setUpdatingTaskId(null);
+  }
+}
+
   const filteredTasks = tasks.filter((task) => {
     const taskName = task.title.toLowerCase();
     const keyword = searchTerm.toLowerCase().trim();
@@ -242,15 +314,27 @@ async function saveTask(id: number) {
   }
 );
 
-  const sortedTasks = [...filteredTasks].sort((a, b) => {
-    if (sortOrder === "newest") {
-      return b.id - a.id;
-    } else {
-      return a.id - b.id;
-    }
-  });
+  const groupedTasks = TASK_GROUPS.map((group) => ({
+    ...group,
+    tasks:
+      now === null
+        ? []
+        : sortedTasks.filter(
+            (task) => getTaskGroup(task, now) === group.key
+          ),
+  })).filter((group) => group.tasks.length > 0);
 
-  const [now, setNow] = useState<number | null>(null);
+  const sortedTasks = [...filteredTasks].sort((a, b) => {
+    if (sortOrder === "newest") return b.id - a.id;
+    if (sortOrder === "oldest") return a.id - b.id;
+
+    const aDue = a.dueAt ? Date.parse(a.dueAt) : Infinity;
+    const bDue = b.dueAt ? Date.parse(b.dueAt) : Infinity;
+
+    if (aDue === bDue) return a.id - b.id;
+
+    return aDue < bDue ? -1 : 1;
+});
 
   useEffect(() => {
     const updateNow = () => setNow(Date.now());
@@ -346,43 +430,92 @@ if (storageError) {
   return (
     <main className="todo-page">
       <div className="todo-container">
+
         <EdgeDock
           paused={
             showComposer ||
             editingTaskId !== null ||
             busy
           }
-        />          
+        />
+
         <header className="page-header">
           <h1>我的任務</h1>
           <p>把每一天，留給重要的事。</p>
         </header>
+
         <details className="list-tools">
+
           <summary>搜尋與篩選</summary>
+
           <div className="toolbar">
+
             <input type="search" aria-label="搜尋任務" placeholder="搜尋任務…"
               value={searchTerm} disabled={busy} onChange={(event) => setSearchTerm(event.target.value)} />
+
             <select aria-label="任務狀態" value={statusFilter} disabled={busy}
               onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
               <option value="all">全部</option>
               <option value="pending">未完成</option>
               <option value="completed">已完成</option>
             </select>
+
             <select aria-label="排序方式" value={sortOrder} disabled={busy}
               onChange={(event) => setSortOrder(event.target.value as typeof sortOrder)}>
               <option value="newest">最新優先</option>
               <option value="oldest">最舊優先</option>
+              <option value="due">截止時間優先</option>
             </select>
+
           </div>
         </details>
+
         <div className="section-heading">
           <h2>我的項目</h2>
           <span>{tasks.filter((task) => !task.completed).length} 項待完成</span>
         </div>
+
         {actionError && <p role="alert" className="action-error">{actionError}</p>}
-        <div role="list" aria-label="任務列表">
-          {sortedTasks.map((task) => (
-            <TaskCard key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask}
+
+        {deletedTasks.length > 0 && (
+          <div className="undo-bar">
+            <span role="status">
+              已刪除「{deletedTasks[deletedTasks.length - 1].title}」
+            </span>
+
+            <button
+              type="button"
+              disabled={busy}
+              onClick={undoDelete}
+            >
+              復原
+            </button>
+          </div>
+        )}
+
+        {now === null && (
+          <p className="empty-state">正在整理任務…</p>
+        )}
+
+        {groupedTasks.map((group) => (
+          <section
+            key={group.key}
+            aria-labelledby={`group-${group.key}`}
+            className="task-group"
+          >
+            <h3
+              id={`group-${group.key}`}
+              className={`task-group-heading ${
+                group.key === "overdue" ? "is-overdue" : ""
+              }`}
+            >
+              {group.label}
+              <span>{group.tasks.length}</span>
+            </h3>
+
+            <div role="list" aria-label={group.label}>
+              {group.tasks.map((task) => (
+              <TaskCard key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask}
               onEdit={(id, title) => {
                 setEditingTaskId(id);
                 setEditingTitle(title);
@@ -397,40 +530,51 @@ if (storageError) {
               isEntering={enteringTaskId === task.id}
               onEnterComplete={() => setEnteringTaskId((current) => current === task.id ? null : current)}
               now={now}
-            />
-          ))}
-        </div>
+              />
+              ))}
+            </div>
+          </section>
+        ))}
+
         {filteredTasks.length === 0 && (
           <p className="empty-state">{tasks.length === 0 ? "還沒有任務，從一件小事開始吧。" : "找不到符合條件的任務。"}</p>
         )}
+
         <button type="button" className="add-task-button" aria-expanded={showComposer}
           aria-controls="task-composer" disabled={busy} onClick={() => setShowComposer((value) => !value)}>
           <span aria-hidden="true">＋</span>添加任務
         </button>
+
         {showComposer && (
           <form id="task-composer" className="task-composer" onSubmit={(event) => {
             event.preventDefault();
             void addTask();
           }}>
+
             <label className="field">
               <span>任務名稱</span>
               <input autoFocus required maxLength={100} placeholder="例如：買麵包 🍞"
                 value={newTaskTitle} disabled={busy} onChange={(event) => setNewTaskTitle(event.target.value)} />
             </label>
+
             <label className="field">
               <span>截止日期與時間 <small>（選填）</small></span>
               <input type="datetime-local" value={newDueAt} disabled={busy}
                 onChange={(event) => setNewDueAt(event.target.value)} />
             </label>
+
             <div className="composer-actions">
+              
               <button type="button" className="text-button" disabled={busy} onClick={() => {
                 setShowComposer(false);
                 setNewTaskTitle("");
                 setNewDueAt("");
               }}>取消</button>
+
               <button type="submit" className="primary-button" disabled={busy}>
                 {isSubmitting ? "新增中…" : "新增任務"}
               </button>
+
             </div>
           </form>
         )}

@@ -92,3 +92,15 @@ export async function deleteTask(id: number): Promise<void> {
   const tasks = readTasks();
   writeTasks(tasks.filter((item) => item.id !== id));
 }
+
+export async function restoreTask(task: Task): Promise<Task> {
+  const tasks = readTasks();
+
+  if (tasks.some((item) => item.id === task.id)) {
+    throw new Error("相同 ID 的任務已存在，無法復原");
+  }
+
+  writeTasks([...tasks, task]);
+
+  return task;
+}
