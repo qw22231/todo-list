@@ -104,3 +104,27 @@ export async function restoreTask(task: Task): Promise<Task> {
 
   return task;
 }
+
+export async function moveTask(
+  sourceId: number,
+  targetId: number
+): Promise<Task[]> {
+  const tasks = readTasks();
+
+  const from = tasks.findIndex((task) => task.id === sourceId);
+  const to = tasks.findIndex((task) => task.id === targetId);
+
+  if (from === -1 || to === -1) {
+    throw new Error("任務已不存在，請重新載入");
+  }
+
+  if (from === to) return tasks;
+
+  const [moved] = tasks.splice(from, 1);
+
+  // 將被拖曳任務移到目標原本的位置。
+  tasks.splice(to, 0, moved);
+
+  writeTasks(tasks);
+  return tasks;
+}

@@ -237,6 +237,85 @@
   font-weight: 600;
 }
 
+.sortable-task {
+  position: relative;
+}
+
+.sortable-task:has(.drag-handle) {
+  padding-left: 22px;
+}
+
+.drag-handle {
+  position: absolute;
+  top: 19px;
+  left: 0;
+  color: #999;
+  font-size: 20px;
+  line-height: 24px;
+  cursor: grab;
+  user-select: none;
+}
+
+.drag-handle:active {
+  cursor: grabbing;
+}
+
+.drag-handle[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.35;
+}
+
+.drag-handle:hover:not([aria-disabled="true"]) {
+  color: #477f4e;
+}
+
+.sortable-task.is-dragging {
+  opacity: 0.35;
+  background: #f5f5f5;
+  outline: 1px dashed #a3a3a3;
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+
+.sortable-task.is-drop-target {
+  background: #edf5ee;
+  outline: 1px dashed #477f4e;
+  outline-offset: -1px;
+  border-radius: 6px;
+}
+
+.sortable-task.is-drop-target::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 3px;
+  background: #477f4e;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.sortable-task.is-drop-target.drop-before::after { top: -2px; }
+.sortable-task.is-drop-target.drop-after::after { bottom: -2px; }
+
+.drag-status {
+  position: fixed;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  z-index: 30;
+  padding: 10px 12px;
+  border: 1px solid #b9d4bd;
+  border-radius: 8px;
+  background: #edf5ee;
+  color: #355d3b;
+  font-size: 12px;
+  box-shadow: 0 3px 12px #00000012;
+  pointer-events: none;
+  overflow-wrap: anywhere;
+}
+
 @keyframes task-in {
   from {
     opacity: 0;

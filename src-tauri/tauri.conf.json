@@ -23,7 +23,8 @@
         "fullscreen": false,
         "alwaysOnTop": true,
         "center": true,
-        "decorations": true
+        "decorations": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

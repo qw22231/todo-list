@@ -10,6 +10,7 @@ import {
   updateTask, 
   deleteTask as deleteStoredTask,
   restoreTask,
+  moveTask,
 } from "@/lib/task-storage";
 
 function toLocalInputValue(value?: string | null): string {
@@ -64,7 +65,7 @@ export default function Home() {
   const [editingTitle, setEditingTitle] = useState<string>("");
   const [searchTerm, setSearchTerm] = useState<string>("");
   const [statusFilter, setStatusFilter] = useState<"all" | "completed" | "pending">("all");
-  const [sortOrder, setSortOrder] = useState<"due" | "newest" | "oldest">("due");
+  const [sortOrder, setSortOrder] = useState<"manual" | "newest" | "oldest">("manual");
   const [storageLoading, setStorageLoading] = useState(true);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -78,6 +79,9 @@ export default function Home() {
   const [showComposer, setShowComposer] = useState(false);
   const [now, setNow] = useState<number | null>(null);
   const [deletedTasks, setDeletedTasks] = useState<Task[]>([]);
+  const [draggingTaskId, setDraggingTaskId] = useState<number | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const [isReordering, setIsReordering] = useState(false);
 
   const [tasks, setTasks] = useState<Task[]>([]);
 
@@ -299,32 +303,58 @@ async function undoDelete() {
   }
 }
 
-  const filteredTasks = tasks.filter((task) => {
-    const taskName = task.title.toLowerCase();
-    const keyword = searchTerm.toLowerCase().trim();
-    const matchesSearch = taskName.includes(keyword);
-    const matchesStatus =
-      statusFilter === "all"
-      ? true
-      : statusFilter === "completed"
-        ? task.completed === true
-        : task.completed === false
+function canMoveTask(sourceId: number | null, targetId: number) {
+  if (!canDrag || now === null || sourceId === null || sourceId === targetId) return false;
+  const source = tasks.find((task) => task.id === sourceId);
+  const target = tasks.find((task) => task.id === targetId);
+  return !!source && !!target &&
+    getTaskGroup(source, now) === getTaskGroup(target, now);
+}
 
-    return matchesSearch && matchesStatus;
+async function dropTask(targetId: number, sourceId = draggingTaskId) {
+  setDraggingTaskId(null);
+  setDropTargetId(null);
+
+  if (sourceId === null || !canMoveTask(sourceId, targetId)) {
+    return;
+  }
+
+  setIsReordering(true);
+  setActionError(null);
+
+  try {
+    const reorderedTasks = await moveTask(sourceId, targetId);
+    setTasks(reorderedTasks);
+  } catch (error: unknown) {
+    setActionError(
+      error instanceof Error ? error.message : "儲存排序失敗"
+    );
+  } finally {
+    setIsReordering(false);
+  }
+}
+
+const filteredTasks = tasks.filter((task) => {
+  const taskName = task.title.toLowerCase();
+  const keyword = searchTerm.toLowerCase().trim();
+  const matchesSearch = taskName.includes(keyword);
+  const matchesStatus =
+    statusFilter === "all"
+    ? true
+    : statusFilter === "completed"
+      ? task.completed === true
+      : task.completed === false
+
+  return matchesSearch && matchesStatus;
   }
 );
 
-  const sortedTasks = [...filteredTasks].sort((a, b) => {
-    if (sortOrder === "newest") return b.id - a.id;
-    if (sortOrder === "oldest") return a.id - b.id;
-
-    const aDue = a.dueAt ? Date.parse(a.dueAt) : Infinity;
-    const bDue = b.dueAt ? Date.parse(b.dueAt) : Infinity;
-
-    if (aDue === bDue) return a.id - b.id;
-
-    return aDue < bDue ? -1 : 1;
-});
+  const sortedTasks =
+  sortOrder === "manual"
+    ? filteredTasks
+    : [...filteredTasks].sort((a, b) =>
+        sortOrder === "newest" ? b.id - a.id : a.id - b.id
+      );
 
   const groupedTasks = TASK_GROUPS.map((group) => ({
     ...group,
@@ -336,17 +366,17 @@ async function undoDelete() {
           ),
   })).filter((group) => group.tasks.length > 0);
 
-  useEffect(() => {
-    const updateNow = () => setNow(Date.now());
+useEffect(() => {
+  const updateNow = () => setNow(Date.now());
 
-    const timer = window.setInterval(updateNow, 1000);
-    window.addEventListener("focus", updateNow);
+  const timer = window.setInterval(updateNow, 1000);
+  window.addEventListener("focus", updateNow);
 
-    return () => {
-      window.clearInterval(timer);
-      window.removeEventListener("focus", updateNow);
-    };
-  }, []);
+  return () => {
+    window.clearInterval(timer);
+    window.removeEventListener("focus", updateNow);
+  };
+}, []);
 
 
 useEffect(() => {
@@ -424,8 +454,19 @@ if (storageError) {
   );
 }
 
+  const busy =
+  isSubmitting ||
+  updatingTaskId !== null ||
+  deletingTaskId !== null ||
+  isReordering;
 
-  const busy = isSubmitting || updatingTaskId !== null || deletingTaskId !== null;
+  const canDrag =
+  sortOrder === "manual" &&
+  !busy &&
+  editingTaskId === null &&
+  !showComposer &&
+  searchTerm.trim() === "" &&
+  statusFilter === "all";
 
   return (
     <main className="todo-page">
@@ -435,7 +476,8 @@ if (storageError) {
           paused={
             showComposer ||
             editingTaskId !== null ||
-            busy
+            busy ||
+            draggingTaskId !== null
           }
         />
 
@@ -465,6 +507,7 @@ if (storageError) {
               <option value="newest">最新優先</option>
               <option value="oldest">最舊優先</option>
               <option value="due">截止時間優先</option>
+              <option value="manual">自訂排序（可拖拽）</option>
             </select>
 
           </div>
@@ -497,6 +540,13 @@ if (storageError) {
           <p className="empty-state">正在整理任務…</p>
         )}
 
+        {draggingTaskId !== null && (
+          <p className="drag-status" role="status">
+            正在移動「{tasks.find((task) => task.id === draggingTaskId)?.title}」；
+            放到同組項目的綠線位置，按 Esc 取消。
+          </p>
+        )}
+
         {groupedTasks.map((group) => (
           <section
             key={group.key}
@@ -514,8 +564,84 @@ if (storageError) {
             </h3>
 
             <div role="list" aria-label={group.label}>
-              {group.tasks.map((task) => (
-              <TaskCard key={task.id} task={task} onToggle={toggleTask} onDelete={deleteTask}
+              {group.tasks.map((task, index) => (
+              <div
+                key={task.id}
+                role="presentation"
+                className={[
+                  "sortable-task",
+                  draggingTaskId === task.id ? "is-dragging" : "",
+                  dropTargetId === task.id ? "is-drop-target" : "",
+                  dropTargetId === task.id &&
+                    group.tasks.findIndex((item) => item.id === draggingTaskId) < index
+                    ? "drop-after" : "drop-before",
+                ].join(" ")}
+                onDragOver={(event) => {
+                  if (canMoveTask(draggingTaskId, task.id)) {
+                    event.preventDefault();
+                    event.dataTransfer.dropEffect = "move";
+                    setDropTargetId(task.id);
+                  } else {
+                    event.dataTransfer.dropEffect = "none";
+                    setDropTargetId(null);
+                  }
+                }}
+                onDragLeave={(event) => {
+                  if (!(event.relatedTarget instanceof Node) ||
+                    !event.currentTarget.contains(event.relatedTarget)) {
+                    setDropTargetId((current) => current === task.id ? null : current);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  void dropTask(task.id);
+                }}
+              >
+                {sortOrder === "manual" && (
+                  <button
+                    type="button"
+                    className="drag-handle"
+                    draggable={canDrag}
+                    aria-disabled={!canDrag}
+                    aria-label={`調整「${task.title}」順序，按 Alt 加上下方向鍵移動`}
+                    title="拖拽同組排序，或按 Alt＋↑／↓"
+                    onDragStart={(event) => {
+                      if (!canDrag) {
+                        event.preventDefault();
+                        return;
+                      }
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", String(task.id));
+                      const row = event.currentTarget.closest(".sortable-task");
+                      if (row instanceof HTMLElement) {
+                        const bounds = row.getBoundingClientRect();
+                        // Use the whole task as the native drag preview, not just the handle.
+                        event.dataTransfer.setDragImage(
+                          row,
+                          Math.max(0, event.clientX - bounds.left),
+                          Math.max(0, event.clientY - bounds.top)
+                        );
+                      }
+                      setDropTargetId(null);
+                      setDraggingTaskId(task.id);
+                    }}
+                    onDragEnd={() => {
+                      setDraggingTaskId(null);
+                      setDropTargetId(null);
+                    }}
+                    onKeyDown={(event) => {
+                      if (!canDrag || !event.altKey ||
+                        !["ArrowUp", "ArrowDown"].includes(event.key)) return;
+                      event.preventDefault();
+                      const target = group.tasks[index + (event.key === "ArrowUp" ? -1 : 1)];
+                      if (target) void dropTask(target.id, task.id);
+                    }}
+                  >
+                    ⠿
+                  </button>
+                )}
+              <TaskCard task={task} onToggle={toggleTask} onDelete={deleteTask}
               onEdit={(id, title) => {
                 setEditingTaskId(id);
                 setEditingTitle(title);
@@ -531,6 +657,7 @@ if (storageError) {
               onEnterComplete={() => setEnteringTaskId((current) => current === task.id ? null : current)}
               now={now}
               />
+              </div>
               ))}
             </div>
           </section>
