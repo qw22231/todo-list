@@ -314,16 +314,6 @@ async function undoDelete() {
   }
 );
 
-  const groupedTasks = TASK_GROUPS.map((group) => ({
-    ...group,
-    tasks:
-      now === null
-        ? []
-        : sortedTasks.filter(
-            (task) => getTaskGroup(task, now) === group.key
-          ),
-  })).filter((group) => group.tasks.length > 0);
-
   const sortedTasks = [...filteredTasks].sort((a, b) => {
     if (sortOrder === "newest") return b.id - a.id;
     if (sortOrder === "oldest") return a.id - b.id;
@@ -335,6 +325,16 @@ async function undoDelete() {
 
     return aDue < bDue ? -1 : 1;
 });
+
+  const groupedTasks = TASK_GROUPS.map((group) => ({
+    ...group,
+    tasks:
+      now === null
+        ? []
+        : sortedTasks.filter(
+            (task) => getTaskGroup(task, now) === group.key
+          ),
+  })).filter((group) => group.tasks.length > 0);
 
   useEffect(() => {
     const updateNow = () => setNow(Date.now());
